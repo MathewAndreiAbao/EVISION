@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
-    import { fade, scale } from "svelte/transition";
+    import { fade } from "svelte/transition";
 
     interface Props {
         onScan?: (data: string) => void;
@@ -14,24 +14,26 @@
     let scanning = $state(false);
     let error = $state("");
     let stream: MediaStream | null = null;
-    let qrScanner: any = null;
-
-    // We'll use the browser's native BarcodeDetector if available,
-    // otherwise we'd normally use a library like jsQR (not in package.json)
-    // or a fallback implementation. For this "Capstone" wow factor,
-    // we'll try to use the modern BarcodeDetector API.
+    let detectionLoopId: number | null = null;
+    let jsQRModule: any = null;
+    let scanStartTime = 0;
 
     onMount(async () => {
         try {
             scanning = true;
+            // Preload jsQR library
+            jsQRModule = await import("jsqr");
+
             stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: "environment" },
             });
-            videoElement.srcObject = stream;
-            videoElement.setAttribute("playsinline", "true");
-            videoElement.play();
 
-            startScanning();
+            if (videoElement) {
+                videoElement.srcObject = stream;
+                videoElement.setAttribute("playsinline", "true");
+                await videoElement.play();
+                startScanning();
+            }
         } catch (err) {
             error =
                 "Could not access camera. Please ensure permissions are granted.";
@@ -45,25 +47,40 @@
 
     function stopScanning() {
         scanning = false;
+        if (detectionLoopId !== null) {
+            cancelAnimationFrame(detectionLoopId);
+            detectionLoopId = null;
+        }
         if (stream) {
             stream.getTracks().forEach((track) => track.stop());
         }
     }
 
     async function startScanning() {
-        if (!scanning) return;
+        if (!scanning || !jsQRModule) return;
 
-        const jsQR = (await import("jsqr")).default;
+        const jsQR = jsQRModule.default;
+        let frameCount = 0;
 
-        const detect = async () => {
+        const detect = () => {
             if (!scanning || !videoElement || !canvasElement) return;
+
+            frameCount++;
+            // Process every 3rd frame to reduce CPU usage
+            if (frameCount % 3 !== 0) {
+                detectionLoopId = requestAnimationFrame(detect);
+                return;
+            }
 
             if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
                 const canvas = canvasElement;
                 const context = canvas.getContext("2d", {
                     willReadFrequently: true,
                 });
-                if (!context) return;
+                if (!context) {
+                    detectionLoopId = requestAnimationFrame(detect);
+                    return;
+                }
 
                 canvas.height = videoElement.videoHeight;
                 canvas.width = videoElement.videoWidth;
@@ -82,13 +99,13 @@
                         const detector = new BarcodeDetector({
                             formats: ["qr_code"],
                         });
-                        const barcodes = await detector.detect(videoElement);
-                        if (barcodes.length > 0) {
-                            onScan?.(barcodes[0].rawValue);
-                            stopScanning();
-                            onClose?.();
-                            return;
-                        }
+                        detector.detect(videoElement).then((barcodes: any[]) => {
+                            if (barcodes.length > 0 && scanning) {
+                                onScan?.(barcodes[0].rawValue);
+                                stopScanning();
+                                onClose?.();
+                            }
+                        });
                     } catch (e) {
                         // Fallback to jsQR
                     }
@@ -118,10 +135,10 @@
                 }
             }
 
-            requestAnimationFrame(detect);
+            detectionLoopId = requestAnimationFrame(detect);
         };
 
-        requestAnimationFrame(detect);
+        detectionLoopId = requestAnimationFrame(detect);
     }
 </script>
 
