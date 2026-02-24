@@ -8,7 +8,7 @@ export const config = {
     // Fallback order:
     // 1. PUBLIC_APP_URL from .env or Vercel
     // 2. Production Vercel URL
-    // 3. window.location.origin (browser only)
+    // 3. window.location.origin (browser onl
     // 4. Default local dev URL
     APP_URL: env.PUBLIC_APP_URL ||
         'https://v0-s-evision.vercel.app' ||
