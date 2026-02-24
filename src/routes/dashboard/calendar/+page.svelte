@@ -31,22 +31,39 @@
     const canEdit = $derived(!isTeacher);
 
     onMount(async () => {
-        // Resolve district ID — supervisors have it directly, teachers get it through their school
-        if ($profile?.district_id) {
-            resolvedDistrictId = $profile.district_id;
-        } else if ($profile?.school_id) {
-            const { data } = await supabase
-                .from("schools")
-                .select("district_id")
-                .eq("id", $profile.school_id)
-                .single();
-            resolvedDistrictId = data?.district_id || null;
-        }
+        try {
+            // Resolve district ID — supervisors have it directly, teachers get it through their school
+            if ($profile?.district_id) {
+                resolvedDistrictId = $profile.district_id;
+                console.log("[v0] District ID from profile:", resolvedDistrictId);
+            } else if ($profile?.school_id) {
+                const { data, error } = await supabase
+                    .from("schools")
+                    .select("district_id")
+                    .eq("id", $profile.school_id)
+                    .single();
+                
+                if (error) {
+                    console.error("[v0] Error resolving district from school:", error);
+                } else {
+                    resolvedDistrictId = data?.district_id || null;
+                    console.log("[v0] District ID resolved from school:", resolvedDistrictId);
+                }
+            } else {
+                console.error("[v0] No district_id or school_id found in profile:", $profile);
+            }
 
-        if (resolvedDistrictId) {
-            await loadDeadlines();
+            if (resolvedDistrictId) {
+                await loadDeadlines();
+            } else {
+                addToast("warning", "Unable to load calendar for your school/district");
+            }
+        } catch (err) {
+            console.error("[v0] Error in calendar onMount:", err);
+            addToast("error", "Failed to load calendar");
+        } finally {
+            loading = false;
         }
-        loading = false;
     });
 
     async function loadDeadlines() {
@@ -85,7 +102,21 @@
     }
 
     async function saveWeek(weekData: any) {
-        if (!canEdit || !resolvedDistrictId || !weekData.deadline_date) return;
+        if (!canEdit) {
+            addToast("error", "You don't have permission to edit the calendar");
+            return;
+        }
+
+        if (!resolvedDistrictId) {
+            addToast("error", "Unable to determine your district. Please refresh the page.");
+            console.error("[v0] Save error: No district ID resolved");
+            return;
+        }
+
+        if (!weekData.deadline_date) {
+            addToast("error", "Please set a deadline date for this week");
+            return;
+        }
 
         const payload = {
             ...(weekData.id ? { id: weekData.id } : {}),
@@ -96,6 +127,8 @@
             description: weekData.description,
             district_id: resolvedDistrictId,
         };
+
+        console.log("[v0] Saving week with payload:", payload);
 
         const { data, error } = await supabase
             .from("academic_calendar")
