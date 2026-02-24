@@ -11,6 +11,6 @@ export const config = {
     // 3. window.location.origin (browser only)
     // 4. Default local dev URL
     APP_URL: env.PUBLIC_APP_URL ||
-        'https://v0-evision.vercel.app' ||
+        'https://v0-s-evision.vercel.app' ||
         (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173')
 };
