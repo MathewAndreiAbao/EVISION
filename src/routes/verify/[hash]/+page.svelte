@@ -93,13 +93,18 @@
     });
 
     function formatDate(dateStr: string): string {
-        return new Date(dateStr).toLocaleDateString("en-PH", {
+        const date = new Date(dateStr);
+        const dateFormatted = date.toLocaleDateString("en-PH", {
             year: "numeric",
             month: "long",
             day: "numeric",
+        });
+        const timeFormatted = date.toLocaleTimeString("en-PH", {
             hour: "2-digit",
             minute: "2-digit",
+            hour12: true,
         });
+        return `${dateFormatted} at ${timeFormatted}`;
     }
 </script>
 
@@ -249,14 +254,12 @@
                                     <p
                                         class="text-[10px] text-text-muted font-black uppercase tracking-widest mb-1"
                                     >
-                                        Timestamp
+                                        Upload Time
                                     </p>
                                     <p
                                         class="text-xs font-bold text-text-primary"
                                     >
-                                        {formatDate(result.created_at).split(
-                                            " at ",
-                                        )[0]}
+                                        {formatDate(result.created_at)}
                                     </p>
                                 </div>
                             </div>
