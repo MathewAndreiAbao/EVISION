@@ -1,11 +1,12 @@
 /**
  * Client-Side Compression
- * Forces all assets to <1MB before upload to extend Supabase free-tier storage.
+ * Automatically compresses files larger than 1MB to optimize storage.
  * Uses browser-image-compression for images and pdf-lib for PDFs.
  */
 
-const MAX_SIZE_BYTES = 1024 * 1024; // 1MB
+const MAX_SIZE_BYTES = 1024 * 1024; // 1MB ideal target
 const COMPRESSION_QUALITY = 0.6; // 60% quality for compression
+const ABSOLUTE_MAX_SIZE = 10 * 1024 * 1024; // 10MB absolute limit (before compression attempt)
 
 export async function compressFile(
     pdfBytes: Uint8Array,
@@ -44,24 +45,47 @@ async function compressPdfContent(pdfBytes: Uint8Array): Promise<Uint8Array> {
     try {
         const pdfDoc = await PDFDocument.load(pdfBytes);
         const pages = pdfDoc.getPages();
+        const initialSize = pdfBytes.byteLength;
 
-        // Optimize each page: remove unnecessary content streams
-        for (const page of pages) {
-            // Note: pdf-lib has limited compression capabilities at runtime.
-            // Main compression achieved by:
-            // 1. Using standard fonts instead of embedded fonts (already done in transcode)
-            // 2. Removing metadata and duplicate objects (done by pdf-lib automatically on save)
-            // 3. Stream compression (handled by PDFDocument.save())
+        console.log(`[compress] Processing ${pages.length} pages for compression...`);
+
+        // Aggressive compression techniques
+        for (let i = 0; i < pages.length; i++) {
+            const page = pages[i];
+            
+            // Scale down large pages (if width/height exceed A4)
+            const { width, height } = page.getSize();
+            const A4_WIDTH = 595.28;
+            const A4_HEIGHT = 841.89;
+            
+            if (width > A4_WIDTH * 1.2 || height > A4_HEIGHT * 1.2) {
+                const scaleX = Math.min(1, A4_WIDTH / width);
+                const scaleY = Math.min(1, A4_HEIGHT / height);
+                const scale = Math.min(scaleX, scaleY);
+                
+                if (scale < 1) {
+                    console.log(`[compress] Page ${i + 1}: Scaling down by ${(scale * 100).toFixed(0)}%`);
+                    page.scale(scale, scale);
+                }
+            }
         }
 
-        // Save with compression flag
+        // Save with aggressive compression settings
         const compressedPdfBytes = await pdfDoc.save({
-            useObjectStreams: true, // Compress object streams
+            useObjectStreams: true,  // Compress object streams
+            objectsPerTick: 50,       // Optimize processing
+            updateFieldAppearances: false, // Skip unnecessary updates
         });
+
+        const reduction = ((1 - compressedPdfBytes.byteLength / initialSize) * 100);
+        console.log(
+            `[compress] Compression achieved: ${(initialSize / 1024).toFixed(0)}KB → ` +
+            `${(compressedPdfBytes.byteLength / 1024).toFixed(0)}KB (${reduction.toFixed(1)}% reduction)`
+        );
 
         return compressedPdfBytes;
     } catch (err) {
-        console.error('[compress] PDF decompression failed:', err);
+        console.error('[compress] PDF compression failed:', err);
         throw err;
     }
 }
